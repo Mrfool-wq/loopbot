@@ -103,6 +103,15 @@ async def init_db():
             )
         """)
 
+        # 12. No Prefix Users
+        # Stores user IDs that can use the bot without a prefix
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS noprefix_users (
+                user_id INTEGER PRIMARY KEY
+            )
+        """)
+        await db.commit()
+
         # database.py (Add this to the 'init_db' function inside the 'NEW TABLES' section)
 
         # 9. Backups

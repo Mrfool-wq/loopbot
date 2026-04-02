@@ -17,34 +17,52 @@ intents.members = True
 # 3. Dynamic Prefix System
 async def get_prefix(bot, message):
     if not message.guild:
-        return "!" 
-
-    # Check the BOT'S specific cache variable
-    if message.guild.id in bot.prefix_cache:
-        return bot.prefix_cache[message.guild.id]
-
-    # If not in RAM, check Database
-    async with get_db_connection() as db:
-        cursor = await db.execute("SELECT prefix FROM prefixes WHERE guild_id = ?", (message.guild.id,))
-        data = await cursor.fetchone()
-    
-    # Update Cache
-    if data:
-        prefix = data[0]
-        bot.prefix_cache[message.guild.id] = prefix
-        return prefix
+        base_prefix = "!" 
     else:
-        bot.prefix_cache[message.guild.id] = "!" 
-        return "!"
+        # Check the BOT'S specific cache variable
+        if message.guild.id in bot.prefix_cache:
+            base_prefix = bot.prefix_cache[message.guild.id]
+        else:
+            # If not in RAM, check Database
+            async with get_db_connection() as db:
+                cursor = await db.execute("SELECT prefix FROM prefixes WHERE guild_id = ?", (message.guild.id,))
+                data = await cursor.fetchone()
+            
+            # Update Cache
+            if data:
+                base_prefix = data[0]
+                bot.prefix_cache[message.guild.id] = base_prefix
+            else:
+                bot.prefix_cache[message.guild.id] = "!" 
+                base_prefix = "!"
+
+    # --- NO PREFIX CHECK ---
+    # If the user is in the no-prefix cache, allow "" (nothing) OR the base prefix
+    if hasattr(bot, 'noprefix_cache') and message.author.id in bot.noprefix_cache:
+        return ["", base_prefix]
+    
+    return base_prefix
 
 # 4. Custom Bot Class
 class MyBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.prefix_cache = {}  # <--- Initialize cache HERE attached to self
+        self.prefix_cache = {}  
+        self.noprefix_cache = set() # <--- Initialize no-prefix cache HERE
 
     async def setup_hook(self):
         await init_db()
+
+        # Load No-Prefix users into RAM Cache on startup
+        async with get_db_connection() as db:
+            # We use a try/except here just in case the table hasn't been created on the very first run
+            try:
+                cursor = await db.execute("SELECT user_id FROM noprefix_users")
+                rows = await cursor.fetchall()
+                for row in rows:
+                    self.noprefix_cache.add(row[0])
+            except Exception as e:
+                print(f"⚠️ Could not load noprefix cache (table might be empty or missing): {e}")
         
         # Load Cogs
         for filename in os.listdir('./cogs'):

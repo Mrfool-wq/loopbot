@@ -58,5 +58,54 @@ class Utility(commands.Cog):
         deleted = await ctx.channel.purge(limit=amount)
         await ctx.send(f"🧹 Deleted {len(deleted)} messages.", delete_after=3)
 
+    @commands.command(name="noprefix", aliases=["np"], description="Toggle no-prefix status for a user (Owner only).")
+    @commands.is_owner()
+    async def noprefix(self, ctx, user: discord.User):
+        """Grants or removes no-prefix status for a specific user."""
+        async with get_db_connection() as db:
+            if user.id in self.bot.noprefix_cache:
+                # User has it, so we remove it
+                await db.execute("DELETE FROM noprefix_users WHERE user_id = ?", (user.id,))
+                self.bot.noprefix_cache.remove(user.id)
+                action = "removed from"
+            else:
+                # User doesn't have it, so we add it
+                await db.execute("INSERT OR IGNORE INTO noprefix_users (user_id) VALUES (?)", (user.id,))
+                self.bot.noprefix_cache.add(user.id)
+                action = "added to"
+            
+            await db.commit()
+            
+        await ctx.send(f"✅ {user.mention} has been {action} the no-prefix list.")
+
+    @commands.command(name="noprefixlist", aliases=["nplist", "npl"], description="List all users with no-prefix privileges (Owner only).")
+    @commands.is_owner()
+    async def noprefixlist(self, ctx):
+        """Shows a list of all users who can use the bot without a prefix."""
+        # Check if the cache is empty
+        if not hasattr(self.bot, 'noprefix_cache') or not self.bot.noprefix_cache:
+            await ctx.send("ℹ️ There are currently no users in the no-prefix list.")
+            return
+
+        # Format the list of users
+        user_mentions = []
+        for user_id in self.bot.noprefix_cache:
+            user = self.bot.get_user(user_id)
+            if user:
+                user_mentions.append(f"• {user.mention} (`{user.name}`)")
+            else:
+                # Fallback if the bot can't find the user in its internal cache
+                user_mentions.append(f"• <@{user_id}> (`{user_id}`)")
+
+        # Create a clean embed
+        embed = discord.Embed(
+            title="✨ No-Prefix Users",
+            description="\n".join(user_mentions),
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text=f"Total users: {len(self.bot.noprefix_cache)}")
+        
+        await ctx.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(Utility(bot))
