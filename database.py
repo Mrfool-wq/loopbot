@@ -103,6 +103,29 @@ async def init_db():
             )
         """)
 
+        # --- MODERATION TABLES ---
+        
+        # 10. Mod Logs
+        # Stores the designated channel ID for moderation logs per server
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS mod_logs (
+                guild_id INTEGER PRIMARY KEY,
+                channel_id INTEGER
+            )
+        """)
+
+        # 11. AFK Users
+        # Stores users who are currently AFK, their reason, and timestamp
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS afk_users (
+                user_id INTEGER,
+                guild_id INTEGER,
+                reason TEXT,
+                timestamp REAL,
+                PRIMARY KEY (user_id, guild_id)
+            )
+        """)
+
         # 12. No Prefix Users
         # Stores user IDs that can use the bot without a prefix
         await db.execute("""
