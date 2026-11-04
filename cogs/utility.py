@@ -3,16 +3,24 @@ from discord.ext import commands
 import time
 from database import get_db_connection
 
+MAX_PURGE = 200
+MAX_PREFIX_LENGTH = 5
+
 class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.hybrid_command(name="setprefix", description="Change the bot prefix for this server.")
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def setprefix(self, ctx, new_prefix: str):
         """Change the bot's prefix. Usage: !setprefix ?"""
-        if len(new_prefix) > 5:
-            await ctx.send("❌ Prefix is too long! Keep it under 5 characters.")
+        if not new_prefix.strip():
+            await ctx.send("❌ The prefix can't be empty.")
+            return
+
+        if len(new_prefix) > MAX_PREFIX_LENGTH:
+            await ctx.send(f"❌ Prefix is too long! Keep it under {MAX_PREFIX_LENGTH + 1} characters.")
             return
 
         # 1. Update Database
@@ -27,7 +35,7 @@ class Utility(commands.Cog):
         # This fixes the issue where the cache wasn't updating for the main loop
         self.bot.prefix_cache[ctx.guild.id] = new_prefix
 
-        await ctx.send(f"✅ Prefix changed to `{new_prefix}`")
+        await ctx.send(f"✅ Prefix changed to `{new_prefix}`", allowed_mentions=discord.AllowedMentions.none())
         
         if ctx.interaction:
             await ctx.send("(Note: Slash commands `/` always work regardless of prefix)", ephemeral=True)
@@ -42,21 +50,42 @@ class Utility(commands.Cog):
         await msg.edit(content=f"🏓 **Pong!**\nWebsocket: `{latency}ms`\nAPI: `{api}ms`")
 
     @commands.hybrid_command(name="serverinfo", description="Displays information about this server.")
+    @commands.guild_only()
     async def serverinfo(self, ctx):
         guild = ctx.guild
         embed = discord.Embed(title=f"ℹ️ {guild.name}", color=discord.Color.blue())
         if guild.icon: embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
+        # guild.owner can be None if the member isn't cached, so use the owner's ID instead
+        embed.add_field(name="Owner", value=f"<@{guild.owner_id}>", inline=True)
         embed.add_field(name="Members", value=str(guild.member_count), inline=True)
         embed.add_field(name="Channels", value=str(len(guild.channels)), inline=True)
+        embed.add_field(name="Created", value=discord.utils.format_dt(guild.created_at, "D"), inline=True)
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="purge", description="Deletes messages.")
+    @commands.hybrid_command(name="purge", description="Deletes messages (1-200).")
+    @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
+    @commands.bot_has_permissions(manage_messages=True, read_message_history=True)
+    @discord.app_commands.describe(amount=f"How many messages to delete (1-{MAX_PURGE})")
     async def purge(self, ctx, amount: int):
+        if not 1 <= amount <= MAX_PURGE:
+            await ctx.send(f"❌ Choose a number between 1 and {MAX_PURGE}.", ephemeral=True)
+            return
+
         await ctx.defer(ephemeral=True)
-        deleted = await ctx.channel.purge(limit=amount)
-        await ctx.send(f"🧹 Deleted {len(deleted)} messages.", delete_after=3)
+
+        if ctx.interaction:
+            deleted = await ctx.channel.purge(limit=amount)
+            await ctx.send(f"🧹 Deleted {len(deleted)} messages.", ephemeral=True)
+        else:
+            # Text command: delete the messages BEFORE the command message, then the command itself,
+            # so "!purge 5" removes 5 messages and not 4 plus the command.
+            deleted = await ctx.channel.purge(limit=amount, before=ctx.message)
+            try:
+                await ctx.message.delete()
+            except discord.HTTPException:
+                pass
+            await ctx.send(f"🧹 Deleted {len(deleted)} messages.", delete_after=3)
 
     @commands.command(name="noprefix", aliases=["np"], description="Toggle no-prefix status for a user (Owner only).")
     @commands.is_owner()
