@@ -1,5 +1,7 @@
 import discord
 import os
+import sys
+import traceback
 from discord.ext import commands
 from dotenv import load_dotenv
 from database import init_db, get_db_connection
@@ -48,7 +50,8 @@ class MyBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prefix_cache = {}  
-        self.noprefix_cache = set() # <--- Initialize no-prefix cache HERE
+        self.noprefix_cache = set()
+        self.commands_synced = False  # makes sure we only auto-sync once per run
 
     async def setup_hook(self):
         await init_db()
@@ -64,11 +67,21 @@ class MyBot(commands.Bot):
             except Exception as e:
                 print(f"⚠️ Could not load noprefix cache (table might be empty or missing): {e}")
         
-        # Load Cogs
-        for filename in os.listdir('./cogs'):
-            if filename.endswith('.py'):
+        # Load Cogs (one broken cog no longer stops the whole bot from starting)
+        loaded, failed = 0, []
+        for filename in sorted(os.listdir('./cogs')):
+            if not filename.endswith('.py'):
+                continue
+            try:
                 await self.load_extension(f'cogs.{filename[:-3]}')
+                loaded += 1
                 print(f"⚙️  Loaded extension: {filename}")
+            except Exception:
+                failed.append(filename)
+                print(f"❌ Failed to load extension: {filename}", file=sys.stderr)
+                traceback.print_exc()
+
+        print(f"📦 Cogs loaded: {loaded}" + (f" | Failed: {', '.join(failed)}" if failed else ""))
 
 bot = MyBot(command_prefix=get_prefix, intents=intents, help_command=None)
 
@@ -77,25 +90,32 @@ bot = MyBot(command_prefix=get_prefix, intents=intents, help_command=None)
 async def on_ready():
     print(f"🚀 {bot.user} is online!")
     print(f"🆔 ID: {bot.user.id}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Auto-Synced {len(synced)} commands globally.")
-    except Exception as e:
-        print(f"❌ Error syncing commands: {e}")
+
+    # on_ready can fire again after a reconnect, so only sync the first time.
+    if not bot.commands_synced:
+        try:
+            synced = await bot.tree.sync()
+            bot.commands_synced = True
+            print(f"✅ Auto-Synced {len(synced)} commands globally.")
+        except Exception as e:
+            print(f"❌ Error syncing commands: {e}")
     print("------")
 
 # 6. Sync Command
 @bot.command(hidden=True)
 @commands.is_owner()
 async def sync(ctx, target: str = None):
-    if target == ".":
-        msg = await ctx.send("🔄 Syncing locally...")
-        synced = await bot.tree.sync(guild=ctx.guild)
-        await msg.edit(content=f"✅ Synced {len(synced)} commands locally!")
-    else:
-        msg = await ctx.send("🌐 Syncing globally...")
-        synced = await bot.tree.sync()
-        await msg.edit(content=f"✅ Synced {len(synced)} commands globally!")
+    try:
+        if target == ".":
+            msg = await ctx.send("🔄 Syncing locally...")
+            synced = await bot.tree.sync(guild=ctx.guild)
+            await msg.edit(content=f"✅ Synced {len(synced)} commands locally!")
+        else:
+            msg = await ctx.send("🌐 Syncing globally...")
+            synced = await bot.tree.sync()
+            await msg.edit(content=f"✅ Synced {len(synced)} commands globally!")
+    except discord.HTTPException as e:
+        await ctx.send(f"❌ Sync failed: {e}")
 
 if __name__ == "__main__":
     if TOKEN:
