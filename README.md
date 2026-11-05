@@ -182,19 +182,7 @@ Clicking a role toggles it on or off. Roles with powerful permissions (Administr
 |---|---|
 | `/apply` | Start a staff application. A form opens, then a private channel is created for you. |
 
----
-
-## 🔗 Invite link
-
-Replace `YOUR_CLIENT_ID` with your application's ID (Discord Developer Portal → your app → *General Information*):
-
-```
-https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applications.commands&permissions=1101525282036
-```
-
-This asks for only what the bot uses: Add Reactions, Manage Channels, Manage Server, View Audit Log, Ban Members, View Channels, Send Messages, Manage Messages, Embed Links, Attach Files, Read Message History, Use External Emojis, Manage Nicknames, Manage Roles, Manage Webhooks, Manage Expressions, Moderate Members.
-
----
+--- 
 
 ## 🖥️ Self-hosting
 
